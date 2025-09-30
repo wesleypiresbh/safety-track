@@ -1,10 +1,11 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react'; // useEffect removed
 import { useRouter } from 'next/router';
 import { z } from 'zod';
 import FormInput from '@/components/FormInput';
 import Button from '@/components/Button';
 import Layout from '@/components/Layout'; // Import Layout
-import { getVehicleById, getServicesByVehicleId, addService, getClientById } from '@/services/firestoreService';
+import { parse } from 'cookie';
+import jwt from 'jsonwebtoken';
 
 const serviceSchema = z.object({
   descricao: z.string().min(5, 'Descrição é obrigatória e deve ter pelo menos 5 caracteres.'),
@@ -14,12 +15,20 @@ const serviceSchema = z.object({
   ),
 });
 
-export default function VehicleDetails() {
+export default function VehicleDetails({ vehicle, client, services }) { // Receive data as props
   const router = useRouter();
   const { id } = router.query;
-  const [vehicle, setVehicle] = useState(null);
-  const [client, setClient] = useState(null);
-  const [services, setServices] = useState([]);
+
+  // State for the vehicle edit form
+  const [vehicleFormData, setVehicleFormData] = useState({
+    make: vehicle.make,
+    model: vehicle.model,
+    year: vehicle.year,
+    plate: vehicle.plate,
+  });
+  const [vehicleErrors, setVehicleErrors] = useState({});
+
+  // State for the add service form
   const [serviceFormData, setServiceFormData] = useState({
     descricao: '',
     valor: '',
@@ -27,28 +36,45 @@ export default function VehicleDetails() {
   const [serviceErrors, setServiceErrors] = useState({});
   const [message, setMessage] = useState('');
 
-  useEffect(() => {
-    if (id) {
-      const fetchVehicleData = async () => {
-        try {
-          const fetchedVehicle = await getVehicleById(id);
-          setVehicle(fetchedVehicle);
+  const handleVehicleChange = (e) => {
+    const { name, value } = e.target;
+    setVehicleFormData((prev) => ({ ...prev, [name]: value }));
+  };
 
-          if (fetchedVehicle && fetchedVehicle.clienteId) {
-            const fetchedClient = await getClientById(fetchedVehicle.clienteId);
-            setClient(fetchedClient);
-          }
+  const handleUpdateVehicle = async (e) => {
+    e.preventDefault();
+    setMessage('');
+    setVehicleErrors({});
 
-          const fetchedServices = await getServicesByVehicleId(id);
-          setServices(fetchedServices);
-        } catch (error) {
-          console.error('Error fetching vehicle data:', error);
-          setMessage('Erro ao carregar dados do veículo.');
-        }
-      };
-      fetchVehicleData();
+    try {
+      // TODO: Add Zod validation for vehicle form
+
+      const response = await fetch('/api/veiculos/update', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          id: id,
+          ...vehicleFormData,
+        }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.message || 'Failed to update vehicle.');
+      }
+
+      setMessage('Veículo atualizado com sucesso!');
+      // Optionally, you can update the initial `vehicle` prop if needed
+      // or just show a success message.
+
+    } catch (error) {
+      // TODO: Handle Zod errors
+      setMessage(`Erro ao atualizar veículo: ${error.message}`);
     }
-  }, [id]);
+  };
 
   const handleServiceChange = (e) => {
     const { name, value } = e.target;
@@ -63,17 +89,29 @@ export default function VehicleDetails() {
     try {
       const validatedData = serviceSchema.parse(serviceFormData);
       
-      await addService({
-        veiculoId: id,
-        data: new Date().toISOString(), // Store as ISO string
-        descricao: validatedData.descricao,
-        valor: validatedData.valor || 0, // Default to 0 if optional and not provided
+      const response = await fetch(`/api/veiculos/${id}/add-service-performed`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          descricao: validatedData.descricao,
+          valor: validatedData.valor,
+          date: new Date().toISOString(), // Pass current date
+        }),
       });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.message || 'Failed to add service.');
+      }
+
       setMessage('Atendimento adicionado com sucesso!');
       setServiceFormData({ descricao: '', valor: '', });
-      // Refresh services list
-      const updatedServices = await getServicesByVehicleId(id);
-      setServices(updatedServices);
+      // For dynamic updates without full page reload, consider SWR or similar client-side data fetching.
+      // For now, a page reload might be needed to see the updated list.
+      router.reload(); // Reload the page to fetch updated services
     } catch (error) {
       if (error instanceof z.ZodError) {
         const newErrors = {};
@@ -101,11 +139,63 @@ export default function VehicleDetails() {
       
       <div className="bg-gray-900 p-6 rounded-lg shadow-xl mb-6">
         <h2 className="text-2xl font-semibold mb-4">Informações do Veículo</h2>
-        <p><strong>Marca:</strong> {vehicle.marca}</p>
-        <p><strong>Modelo:</strong> {vehicle.modelo}</p>
-        <p><strong>Ano:</strong> {vehicle.ano}</p>
-        <p><strong>Placa:</strong> {vehicle.placa}</p>
-        {client && <p><strong>Cliente:</strong> {client.nome} ({client.cpfCnpj})</p>}
+        <p className="mb-4"><strong>Cliente:</strong> {client.name} ({client.cpf_cnpj})</p>
+        <form onSubmit={handleUpdateVehicle} className="space-y-4">
+          <div className="flex space-x-4">
+            <div className="w-1/2">
+              <label htmlFor="make" className="block text-sm font-medium text-gray-400 mb-1">Marca</label>
+              <FormInput
+                id="make"
+                type="text"
+                name="make"
+                value={vehicleFormData.make}
+                onChange={handleVehicleChange}
+              />
+              {/* TODO: Add error display */}
+            </div>
+            <div className="w-1/2">
+              <label htmlFor="model" className="block text-sm font-medium text-gray-400 mb-1">Modelo</label>
+              <FormInput
+                id="model"
+                type="text"
+                name="model"
+                value={vehicleFormData.model}
+                onChange={handleVehicleChange}
+              />
+              {/* TODO: Add error display */}
+            </div>
+          </div>
+          <div className="flex space-x-4">
+            <div className="w-1/2">
+              <label htmlFor="year" className="block text-sm font-medium text-gray-400 mb-1">Ano</label>
+              <FormInput
+                id="year"
+                type="number"
+                name="year"
+                value={vehicleFormData.year}
+                onChange={handleVehicleChange}
+              />
+              {/* TODO: Add error display */}
+            </div>
+            <div className="w-1/2">
+              <label htmlFor="plate" className="block text-sm font-medium text-gray-400 mb-1">Placa</label>
+              <FormInput
+                id="plate"
+                type="text"
+                name="plate"
+                value={vehicleFormData.plate}
+                onChange={handleVehicleChange}
+              />
+              {/* TODO: Add error display */}
+            </div>
+          </div>
+          <Button
+            type="submit"
+            className="bg-green-600 hover:bg-green-700 text-white"
+          >
+            Salvar Alterações
+          </Button>
+        </form>
       </div>
 
       <div className="bg-gray-900 p-6 rounded-lg shadow-xl mb-6">
@@ -149,9 +239,9 @@ export default function VehicleDetails() {
           <ul>
             {services.map((service) => (
               <li key={service.id} className="mb-4 p-4 border border-gray-700 rounded">
-                <p><strong>Data:</strong> {new Date(service.data).toLocaleString()}</p>
-                <p><strong>Descrição:</strong> {service.descricao}</p>
-                {service.valor !== undefined && <p><strong>Valor:</strong> R$ {service.valor.toFixed(2)}</p>}
+                <p><strong>Data:</strong> {new Date(service.date).toLocaleString()}</p>
+                <p><strong>Descrição:</strong> {service.description}</p>
+                {service.value !== undefined && <p><strong>Valor:</strong> R$ {service.value.toFixed(2)}</p>}
               </li>
             ))}
           </ul>
@@ -159,4 +249,57 @@ export default function VehicleDetails() {
       </div>
     </Layout> // Close Layout
   );
+}
+
+import * as dataService from '@/services/dataService';
+
+export async function getServerSideProps(context) {
+  const { req, query } = context;
+  const { id } = query;
+  const cookies = parse(req.headers.cookie || '');
+  const token = cookies.token;
+
+  if (!token) {
+    return {
+      redirect: {
+        destination: '/',
+        permanent: false,
+      },
+    };
+  }
+
+  try {
+    jwt.verify(token, process.env.JWT_SECRET || 'your_jwt_secret');
+
+    const vehicle = await dataService.getVehicleById(id);
+
+    if (!vehicle) {
+      return {
+        notFound: true,
+      };
+    }
+
+    let client = null;
+    if (vehicle.client_id) {
+      client = await dataService.getClientById(vehicle.client_id);
+    }
+
+    const services = await dataService.getVehicleServicesPerformed(id);
+
+    return {
+      props: {
+        vehicle,
+        client,
+        services,
+      },
+    };
+  } catch (error) {
+    console.error('Error verifying token or fetching data for Vehicle Details:', error);
+    return {
+      redirect: {
+        destination: '/',
+        permanent: false,
+      },
+    };
+  }
 }

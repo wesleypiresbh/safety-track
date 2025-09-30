@@ -1,7 +1,6 @@
 import Link from 'next/link';
 import Image from 'next/image'; // Import Image
 import { useState } from 'react';
-import { loginWithEmail } from '@/services/authService';
 import FormInput from '@/components/FormInput';
 import Button from '@/components/Button';
 
@@ -12,8 +11,23 @@ export default function HomePage() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    setError(''); // Limpa erros anteriores
     try {
-      await loginWithEmail(email, password);
+      const response = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ email, password }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.message || 'Falha ao fazer login.');
+      }
+
+      // Assumindo login bem-sucedido, redireciona para o dashboard
       window.location.href = '/dashboard';
     } catch (err) {
       setError(err.message);

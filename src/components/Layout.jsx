@@ -1,39 +1,24 @@
-import React, { useEffect, useState } from 'react';
-import { auth } from '@/lib/firebase';
-import { logout } from '@/services/authService'; // Import logout
+import React from 'react'; // No useEffect, useState needed for auth state here
 import Header from './Header';
 import Sidebar from './Sidebar';
 
-const Layout = ({ children }) => {
-  const [user, setUser] = useState(null);
-
-  useEffect(() => {
-    const unsubscribe = auth.onAuthStateChanged((user) => {
-      if (user) {
-        setUser(user);
-      } else {
-        window.location.href = '/'; // Redirect to login if not authenticated
-      }
-    });
-
-    return () => unsubscribe();
-  }, []);
-
-  const handleLogout = async () => { // Add handleLogout here
+const Layout = ({ children }) => { // user prop can be passed if needed from _app.js or page
+  const handleLogout = async () => {
     try {
-      await logout();
+      await fetch('/api/auth/logout', { method: 'POST' });
+      window.location.href = '/'; // Redirect to login page after logout
     } catch (error) {
       console.error('Error logging out:', error);
     }
   };
 
-  if (!user) {
-    return null; // Or a loading spinner while checking auth status
-  }
+  // Layout no longer manages auth state or redirects unauthenticated users.
+  // Protected pages will handle redirection via getServerSideProps.
+  // If user info is needed in Header, it should be passed as a prop to Layout.
 
   return (
     <div className="min-h-screen bg-black text-white flex flex-col">
-      <Header userEmail={user.email} />
+      <Header /> {/* userEmail prop removed, can be passed if Layout receives it */}
       <div className="flex flex-1">
         <Sidebar handleLogout={handleLogout} /> {/* Pass handleLogout to Sidebar */}
         <main className="flex-1 p-6">

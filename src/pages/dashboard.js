@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
-// Removed: import { logout } from '@/services/authService';
-// Removed: import Button from '@/components/Button';
 import Layout from '@/components/Layout';
 import Card from '@/components/Card'; // Import Card
+import { parse } from 'cookie'; // This was added with getServerSideProps, but I'll put it back in the correct place later
+import jwt from 'jsonwebtoken'; // This was added with getServerSideProps, but I'll put it back in the correct place later
 import {
   getTotalClients,
   getTotalVehicles,
@@ -11,95 +11,17 @@ import {
   getRecentClients,
   getRecentVehicles,
   getRecentOS,
-} from '@/services/firestoreService';
+} from '@/services/dataService';
 
-export default function Dashboard() {
-  const [metrics, setMetrics] = useState({
-    totalClients: 0,
-    totalVehicles: 0,
-    totalOS: 0,
-    osOpen: 0,
-    osInProgress: 0,
-    osCompleted: 0,
-    osCanceled: 0,
-  });
-  const [recentClients, setRecentClients] = useState([]);
-  const [recentVehicles, setRecentVehicles] = useState([]);
-  const [recentOS, setRecentOS] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
+export default function Dashboard({ user, metrics, recentClients, recentVehicles, recentOS }) { // Receive all data as props
+  
 
-  useEffect(() => {
-    const fetchDashboardData = async () => {
-      try {
-        const [
-          totalClients,
-          totalVehicles,
-          totalOS,
-          osOpen,
-          osInProgress,
-          osCompleted,
-          osCanceled,
-          recentClients,
-          recentVehicles,
-          recentOS,
-        ] = await Promise.all([
-          getTotalClients(),
-          getTotalVehicles(),
-          getTotalOS(),
-          getOSCountByStatus('Aberta'),
-          getOSCountByStatus('Em Andamento'),
-          getOSCountByStatus('Concluída'),
-          getOSCountByStatus('Cancelada'),
-          getRecentClients(),
-          getRecentVehicles(),
-          getRecentOS(),
-        ]);
-
-        setMetrics({
-          totalClients,
-          totalVehicles,
-          totalOS,
-          osOpen,
-          osInProgress,
-          osCompleted,
-          osCanceled,
-        });
-        setRecentClients(recentClients);
-        setRecentVehicles(recentVehicles);
-        setRecentOS(recentOS);
-      } catch (err) {
-        console.error('Error fetching dashboard data:', err);
-        setError('Erro ao carregar dados do dashboard.');
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchDashboardData();
-  }, []);
-
-  // Removed: handleLogout function
-
-  if (loading) {
-    return (
-      <Layout>
-        <p>Carregando dados do dashboard...</p>
-      </Layout>
-    );
-  }
-
-  if (error) {
-    return (
-      <Layout>
-        <p className="text-red-500">{error}</p>
-      </Layout>
-    );
-  }
+  
 
   return (
     <Layout>
       <h1 className="text-4xl font-bold mb-6">Dashboard</h1>
+      {user && <p className="text-white mb-4">Bem-vindo, {user.email}!</p>} {/* Display user email */}
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
         <Card title="Total de Clientes">
@@ -133,7 +55,7 @@ export default function Dashboard() {
             <ul>
               {recentClients.map((client) => (
                 <li key={client.id} className="mb-2">
-                  {client.nome} ({client.cpfCnpj})
+                  {client.name} ({client.cpf_cnpj})
                 </li>
               ))}
             </ul>
@@ -146,7 +68,7 @@ export default function Dashboard() {
             <ul>
               {recentVehicles.map((vehicle) => (
                 <li key={vehicle.id} className="mb-2">
-                  {vehicle.marca} {vehicle.modelo} ({vehicle.placa})
+                  {vehicle.make} {vehicle.model} ({vehicle.plate})
                 </li>
               ))}
             </ul>
@@ -159,7 +81,7 @@ export default function Dashboard() {
             <ul>
               {recentOS.map((os) => (
                 <li key={os.id} className="mb-2">
-                  OS #{os.id.substring(0, 6)} - Status: {os.status}
+                  OS #{os.id} - Status: {os.status} - Veículo: {os.vehicle_make} {os.vehicle_model} ({os.vehicle_plate})
                 </li>
               ))}
             </ul>
@@ -167,7 +89,104 @@ export default function Dashboard() {
         </Card>
       </div>
 
-      {/* Removed: Logout Button */}
+      <div className="mt-8">
+        <button
+          onClick={async () => {
+            await fetch('/api/auth/logout', { method: 'POST' });
+            window.location.href = '/'; // Redireciona para a página de login
+          }}
+          className="bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-4 rounded"
+        >
+          Sair
+        </button>
+      </div>
     </Layout>
   );
+}
+
+export async function getServerSideProps(context) {
+  const { req } = context;
+  const cookies = parse(req.headers.cookie || '');
+  const token = cookies.token;
+
+  if (!token) {
+    return {
+      redirect: {
+        destination: '/', // Redireciona para a página de login
+        permanent: false,
+      },
+    };
+  }
+
+  try {
+    const user = jwt.verify(token, process.env.JWT_SECRET || 'your_jwt_secret');
+
+    // Fetch all dashboard data on the server-side
+    const [
+      totalClients,
+      totalVehicles,
+      totalOS,
+      osOpen,
+      osInProgress,
+      osCompleted,
+      osCanceled,
+      recentClients,
+      recentVehicles,
+      recentOS,
+    ] = await Promise.all([
+      getTotalClients(),
+      getTotalVehicles(),
+      getTotalOS(),
+      getOSCountByStatus('Aberta'),
+      getOSCountByStatus('Em Andamento'),
+      getOSCountByStatus('OS Concluida'),
+      getOSCountByStatus('Cancelada'),
+      getRecentClients(),
+      getRecentVehicles(),
+      getRecentOS(),
+    ]);
+
+    const recentOSData = await getRecentOS();
+    const serializableRecentOS = recentOSData.map(os => {
+      const plainOs = JSON.parse(JSON.stringify(os));
+      return {
+        ...plainOs,
+        start_date: plainOs.start_date ? new Date(plainOs.start_date).toISOString() : null,
+        end_date: plainOs.end_date ? new Date(plainOs.end_date).toISOString() : null,
+      };
+    });
+
+    const metrics = {
+      totalClients,
+      totalVehicles,
+      totalOS,
+      osOpen,
+      osInProgress,
+      osCompleted,
+      osCanceled,
+    };
+
+    const props = {
+      user,
+      metrics,
+      recentClients,
+      recentVehicles,
+      recentOS: serializableRecentOS,
+    };
+
+    // Aggressively serialize the entire props object
+    const finalSerializableProps = JSON.parse(JSON.stringify(props));
+
+    return {
+      props: finalSerializableProps,
+    };
+  } catch (error) {
+    console.error('Erro ao verificar token ou buscar dados do dashboard:', error);
+    return {
+      redirect: {
+        destination: '/', // Redireciona para a página de login em caso de token inválido ou erro na busca de dados
+        permanent: false,
+      },
+    };
+  }
 }

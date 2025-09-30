@@ -1,176 +1,169 @@
 import React, { useState, useEffect } from 'react';
+import { parse } from 'cookie';
+import jwt from 'jsonwebtoken';
+import Layout from '@/components/Layout';
+import { getOSById } from '@/services/dataService';
+import { getClientById } from '@/services/dataService';
+import { getVehicleById } from '@/services/dataService';
+import { getServiceById } from '@/services/dataService';
 import { useRouter } from 'next/router';
-import { z } from 'zod';
-import FormInput from '@/components/FormInput';
 import Button from '@/components/Button';
-import Layout from '@/components/Layout'; // Import Layout
-import { getOSById, updateOSStatus, updateOSCosts, getClientById, getVehicleById } from '@/services/firestoreService';
 
-const costSchema = z.object({
-  custoPecas: z.preprocess(
-    (val) => (val === '' ? undefined : Number(val)),
-    z.number().min(0, 'Custo de Peças não pode ser negativo.').optional()
-  ),
-  custoMaoDeObra: z.preprocess(
-    (val) => (val === '' ? undefined : Number(val)),
-    z.number().min(0, 'Custo de Mão de Obra não pode ser negativo.').optional()
-  ),
-});
-
-export default function OSDetails() {
+export default function OsDetailsPage({ os, client, vehicle, services, companyInfo }) {
   const router = useRouter();
-  const { id } = router.query;
-  const [os, setOs] = useState(null);
-  const [client, setClient] = useState(null);
-  const [vehicle, setVehicle] = useState(null);
-  const [costFormData, setCostFormData] = useState({
-    custoPecas: '',
-    custoMaoDeObra: '',
-  });
-  const [costErrors, setCostErrors] = useState({});
-  const [message, setMessage] = useState('');
-
-  useEffect(() => {
-    if (id) {
-      const fetchOSData = async () => {
-        try {
-          const fetchedOS = await getOSById(id);
-          setOs(fetchedOS);
-
-          if (fetchedOS) {
-            // Fetch client and vehicle details
-            const fetchedClient = await getClientById(fetchedOS.clienteId);
-            setClient(fetchedClient);
-            const fetchedVehicle = await getVehicleById(fetchedOS.veiculoId);
-            setVehicle(fetchedVehicle);
-
-            // Set initial cost form data if available
-            setCostFormData({
-              custoPecas: fetchedOS.custoPecas || '',
-              custoMaoDeObra: fetchedOS.custoMaoDeObra || '',
-            });
-          }
-        } catch (error) {
-          console.error('Error fetching OS data:', error);
-          setMessage('Erro ao carregar dados da OS.');
-        }
-      };
-      fetchOSData();
-    }
-  }, [id]);
-
-  const handleStatusUpdate = async (newStatus) => {
-    try {
-      await updateOSStatus(id, newStatus);
-      setOs((prev) => ({ ...prev, status: newStatus }));
-      setMessage(`Status da OS atualizado para: ${newStatus}`);
-    } catch (error) {
-      console.error('Error updating status:', error);
-      setMessage(`Erro ao atualizar status: ${error.message}`);
-    }
-  };
-
-  const handleCostChange = (e) => {
-    const { name, value } = e.target;
-    setCostFormData((prev) => ({ ...prev, [name]: value }));
-  };
-
-  const handleCostUpdate = async (e) => {
-    e.preventDefault();
-    setMessage('');
-    setCostErrors({});
-
-    try {
-      const validatedData = costSchema.parse(costFormData);
-      
-      await updateOSCosts(id, validatedData.custoPecas, validatedData.custoMaoDeObra);
-      setOs((prev) => ({
-        ...prev,
-        custoPecas: validatedData.custoPecas,
-        custoMaoDeObra: validatedData.custoMaoDeObra,
-        custoTotal: (validatedData.custoPecas || 0) + (validatedData.custoMaoDeObra || 0),
-        dataConclusao: new Date().toISOString(), // Update conclusion date
-      }));
-      setMessage('Custos da OS atualizados com sucesso!');
-    } catch (error) {
-      if (error instanceof z.ZodError) {
-        const newErrors = {};
-        for (const issue of error.issues) {
-          newErrors[issue.path[0]] = issue.message;
-        }
-        setCostErrors(newErrors);
-      } else {
-        setMessage(`Erro ao atualizar custos: ${error.message}`);
-      }
-    }
-  };
-
-  if (!os) {
-    return (
-      <Layout> {/* Wrap with Layout */}
-        <p>Carregando...</p>
-      </Layout>
-    );
+  if (!os || !client || !vehicle) {
+    return <p>Ordem de Serviço, Cliente ou Veículo não encontrado.</p>;
   }
 
-  return (
-    <Layout> {/* Wrap with Layout */}
-      <h1 className="text-3xl font-bold mb-6">Detalhes da Ordem de Serviço #{id}</h1>
-      
-      <div className="bg-gray-900 p-6 rounded-lg shadow-xl mb-6">
-        <h2 className="text-2xl font-semibold mb-4">Informações da OS</h2>
-        <p><strong>Status:</strong> {os.status}</p>
-        <p><strong>Data de Abertura:</strong> {new Date(os.dataAbertura).toLocaleString()}</p>
-        <p><strong>KM:</strong> {os.km}</p>
-        <p><strong>Observações:</strong> {os.observacoes}</p>
-        {client && <p><strong>Cliente:</strong> {client.nome} ({client.cpfCnpj})</p>}
-        {vehicle && <p><strong>Veículo:</strong> {vehicle.marca} {vehicle.modelo} ({vehicle.placa})</p>}
-        {os.dataConclusao && <p><strong>Data de Conclusão:</strong> {new Date(os.dataConclusao).toLocaleString()}</p>}
-      </div>
+  const [message, setMessage] = useState('');
 
-      <div className="bg-gray-900 p-6 rounded-lg shadow-xl mb-6">
-        <h2 className="text-2xl font-semibold mb-4">Atualizar Status</h2>
-        <div className="flex space-x-4">
-          <Button onClick={() => handleStatusUpdate('Em Andamento')} className="bg-blue-600 hover:bg-blue-700 text-white w-auto px-4">Em Andamento</Button>
-          <Button onClick={() => handleStatusUpdate('Concluída')} className="bg-green-600 hover:bg-green-700 text-white w-auto px-4">Concluída</Button>
-          <Button onClick={() => handleStatusUpdate('Cancelada')} className="bg-red-600 hover:bg-red-700 text-white w-auto px-4">Cancelada</Button>
+  const handleConcluirOS = async () => {
+    try {
+      const response = await fetch(`/api/os/${os.id}/status`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ status: 'Concluída' }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.message || 'Falha ao concluir OS.');
+      }
+
+      setMessage('OS concluída com sucesso!');
+      // Refresh the page to show updated status
+      router.reload();
+    } catch (error) {
+      console.error('Erro ao concluir OS:', error);
+      setMessage(`Erro: ${error.message}`);
+    }
+  };
+
+  return (
+    <Layout>
+      <div className="max-w-4xl mx-auto bg-gray-900 p-8 rounded-lg shadow-xl print:bg-white print:text-black print:shadow-none print:p-0">
+        <div className="print:block hidden text-center mb-4">
+          {companyInfo && (
+            <div className="mb-4">
+              <h2 className="text-2xl font-bold">{companyInfo.name}</h2>
+              <p>{companyInfo.address}</p>
+              <p>Telefone: {companyInfo.phone}</p>
+              <p>Email: {companyInfo.email}</p>
+              <p>CNPJ: {companyInfo.cnpj}</p>
+            </div>
+          )}
+          <h1 className="text-3xl font-bold mb-6 text-black">ORDEM DE SERVIÇO</h1>
+        </div>
+        <h1 className="text-3xl font-bold mb-6 print:hidden">Detalhes da Ordem de Serviço #{os.id}</h1>
+        
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 text-gray-300">
+          <div>
+            <h2 className="text-xl font-semibold mb-2 text-orange-500">Cliente</h2>
+            <p><strong>Nome:</strong> {client.name}</p>
+            <p><strong>Email:</strong> {client.email}</p>
+            <p><strong>Telefone:</strong> {client.phone}</p>
+          </div>
+          <div>
+            <h2 className="text-xl font-semibold mb-2 text-orange-500">Veículo</h2>
+            <p><strong>Modelo:</strong> {vehicle.make} {vehicle.model}</p>
+            <p><strong>Placa:</strong> {vehicle.plate}</p>
+            <p><strong>Ano:</strong> {vehicle.year}</p>
+          </div>
+        </div>
+
+        <div className="mt-6">
+          <h2 className="text-xl font-semibold mb-2 text-orange-500">Detalhes da OS</h2>
+          <p><strong>Status:</strong> <span className="font-bold">{os.status}</span></p>
+          <p><strong>Combustível:</strong> {os.combustivel}</p>
+          <p><strong>Observações:</strong> {os.description}</p>
+        </div>
+
+        <div className="mt-6">
+          <h2 className="text-xl font-semibold mb-2 text-orange-500">Serviços</h2>
+          <ul>
+            {services.map(service => (
+              <li key={service.id} className="mb-1">{service.name}</li>
+            ))}
+          </ul>
+        </div>
+
+        <div className="mt-6 print:hidden">
+          <h2 className="text-xl font-semibold mb-2 text-orange-500">Custos</h2>
+          <p><strong>Custo das Peças:</strong> R$ {(os.custoPecas || 0).toFixed(2)}</p>
+          <p><strong>Custo da Mão de Obra:</strong> R$ {(os.custoMaoDeObra || 0).toFixed(2)}</p>
+          <p className="text-lg font-bold mt-2"><strong>Total:</strong> R$ {(os.total_price || 0).toFixed(2)}</p>
+        </div>
+        <div className="mt-6 flex justify-end space-x-4">
+          {os.status !== 'Concluída' && (
+            <Button onClick={handleConcluirOS} className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 text-sm">
+              Concluir OS
+            </Button>
+          )}
+          <button
+            onClick={() => window.print()}
+            className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded inline-flex items-center print:hidden"
+          >
+            <svg className="fill-current w-4 h-4 mr-2" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20"><path d="M5 4V1h10v3h2v10h-2v4H5v-4H3V4h2zm0 10v3h10v-3H5zm-2-8h14V6H3V6zm0 2v2h14V8H3z"/></svg>
+            Imprimir
+          </button>
         </div>
       </div>
-
-      <div className="bg-gray-900 p-6 rounded-lg shadow-xl mb-6">
-        <h2 className="text-2xl font-semibold mb-4">Custos e Total</h2>
-        <form onSubmit={handleCostUpdate} className="space-y-4">
-          <div>
-            <FormInput
-              type="number"
-              name="custoPecas"
-              placeholder="Custo de Peças"
-              value={costFormData.custoPecas}
-              onChange={handleCostChange}
-            />
-            {costErrors.custoPecas && <p className="text-red-500 text-sm mt-1">{costErrors.custoPecas}</p>}
-          </div>
-          <div>
-            <FormInput
-              type="number"
-              name="custoMaoDeObra"
-              placeholder="Custo de Mão de Obra"
-              value={costFormData.custoMaoDeObra}
-              onChange={handleCostChange}
-            />
-            {costErrors.custoMaoDeObra && <p className="text-red-500 text-sm mt-1">{costErrors.custoMaoDeObra}</p>}
-          </div>
-          <Button
-            type="submit"
-            className="bg-orange-600 hover:bg-orange-700 text-white"
-          >
-            Atualizar Custos
-          </Button>
-        </form>
-        {os.custoTotal !== undefined && <p className="text-xl font-bold mt-4">Custo Total: R$ {os.custoTotal.toFixed(2)}</p>}
-      </div>
-
-      {message && <p className="text-green-500 mt-4 text-center">{message}</p>}
-    </Layout> // Close Layout
+    </Layout>
   );
+}
+
+export async function getServerSideProps(context) {
+  const { req, params } = context;
+  const { id } = params;
+  const cookies = parse(req.headers.cookie || '');
+  const token = cookies.token;
+
+  if (!token) {
+    return { redirect: { destination: '/', permanent: false } };
+  }
+
+  try {
+    jwt.verify(token, process.env.JWT_SECRET || 'your_jwt_secret');
+
+    const protocol = process.env.NODE_ENV === 'production' ? 'https' : 'http';
+    const host = req.headers.host;
+
+    const os = await getOSById(id);
+    const client = await getClientById(os.client_id) || null;
+    const vehicle = await getVehicleById(os.vehicle_id) || null;
+    
+    const services = await Promise.all(
+      (os.services_ids || []).map(serviceId => getServiceById(serviceId))
+    ) || [];
+
+    const serializableOS = {
+      ...os,
+      start_date: os.start_date.toISOString(),
+      end_date: os.end_date ? os.end_date.toISOString() : null,
+    };
+
+    const companyInfoResponse = await fetch(`${protocol}://${host}/api/company-info`, {
+      headers: { Cookie: `token=${token}` },
+    });
+    if (!companyInfoResponse.ok) {
+      throw new Error(`Failed to fetch company info: ${companyInfoResponse.statusText}`);
+    }
+    const companyInfo = await companyInfoResponse.json();
+
+    return {
+      props: {
+        os: serializableOS,
+        client,
+        vehicle,
+        services,
+        companyInfo,
+      },
+    };
+  } catch (error) {
+    console.error(`Error fetching OS details for id ${id}:`, error);
+    return { notFound: true };
+  }
 }

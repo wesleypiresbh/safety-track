@@ -27,6 +27,26 @@ const Sidebar = ({ handleLogout }) => { // Receive handleLogout prop
               Ordens de Serviço
             </Link>
           </li>
+          <li>
+            <Link href="/orcamentos" className="block py-2.5 px-4 rounded transition duration-200 hover:bg-gray-700">
+              Orçamentos
+            </Link>
+          </li>
+          <li>
+            <Link href="/faturas" className="block py-2.5 px-4 rounded transition duration-200 hover:bg-gray-700">
+              Faturas
+            </Link>
+          </li>
+          <li>
+            <Link href="/servicos" className="block py-2.5 px-4 rounded transition duration-200 hover:bg-gray-700">
+              Serviços
+            </Link>
+          </li>
+          <li>
+            <Link href="/company-settings" className="block py-2.5 px-4 rounded transition duration-200 hover:bg-gray-700">
+              Configurações da Empresa
+            </Link>
+          </li>
           {/* Add more navigation links here */}
         </ul>
       </nav>

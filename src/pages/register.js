@@ -1,6 +1,5 @@
 import { useState } from 'react';
 import Link from 'next/link';
-import { registerWithEmail } from '@/services/authService';
 import FormInput from '@/components/FormInput';
 import Button from '@/components/Button';
 
@@ -11,10 +10,24 @@ export default function Register() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    setError(''); // Limpa erros anteriores
     try {
-      await registerWithEmail(email, password);
-      // Redirect to login page after successful registration
-      window.location.href = '/dashboard';
+      const response = await fetch('/api/auth/register', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ email, password }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.message || 'Falha ao registrar.');
+      }
+
+      // Redireciona para a página de login após o registro bem-sucedido
+      window.location.href = '/'; // Assumindo que '/' é a página de login
     } catch (err) {
       setError(err.message);
     }
