@@ -12,6 +12,53 @@ export default function OrcamentoDetailsPage({ initialOrcamento, clients, vehicl
   const { id } = router.query;
   const [orcamento, setOrcamento] = useState(initialOrcamento);
   const [message, setMessage] = useState('');
+  const [displayFormattedDate, setDisplayFormattedDate] = useState('');
+  const [displayUpdatedAt, setDisplayUpdatedAt] = useState('');
+
+  useEffect(() => {
+    if (orcamento.data_orcamento) {
+      setDisplayFormattedDate(new Date(orcamento.data_orcamento).toLocaleDateString('pt-BR'));
+    } else {
+      setDisplayFormattedDate('N/A');
+    }
+
+    if (orcamento.updated_at) {
+      const date = new Date(orcamento.updated_at);
+      setDisplayUpdatedAt(`(Editado em ${date.toLocaleDateString('pt-BR')} as ${date.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })})`);
+    } else {
+      setDisplayUpdatedAt('');
+    }
+  }, [orcamento.data_orcamento, orcamento.updated_at]);
+
+  const handleApprove = async () => {
+    if (!confirm('Tem certeza que deseja aprovar este orçamento? Esta ação não pode ser desfeita.')) {
+      return;
+    }
+
+    try {
+      const res = await fetch(`/api/orcamentos/${id}/approve`, {
+        method: 'POST',
+      });
+
+      if (!res.ok) {
+        const errorData = await res.json();
+        throw new Error(errorData.message || 'Falha ao aprovar o orçamento.');
+      }
+
+      const updatedOrcamento = await res.json();
+
+      // Update the state to reflect the change
+      setOrcamento(prev => ({ ...prev, status: updatedOrcamento.status }));
+      setMessage('Orçamento aprovado com sucesso! A página será recarregada.');
+
+      // Reload the page to reflect the new status and potentially created OS
+      setTimeout(() => router.reload(), 2000);
+
+    } catch (error) {
+      console.error('Erro ao aprovar orçamento:', error);
+      setMessage(`Erro: ${error.message}`);
+    }
+  };
 
   // Helper to find client/vehicle/service names
   const getClientName = (clientId) => clients.find(c => c.id === clientId)?.name || 'N/A';
@@ -34,7 +81,8 @@ export default function OrcamentoDetailsPage({ initialOrcamento, clients, vehicl
   };
 
   // Format date for display
-  const formattedDate = orcamento.data_orcamento ? new Date(orcamento.data_orcamento).toLocaleDateString('pt-BR') : 'N/A';
+  // This was moved into useEffect for hydration fix, so this line is no longer needed here.
+  // const formattedDate = orcamento.data_orcamento ? new Date(orcamento.data_orcamento).toLocaleDateString('pt-BR') : 'N/A';
 
   const calculateTotal = () => {
     let total = 0;
@@ -75,14 +123,13 @@ export default function OrcamentoDetailsPage({ initialOrcamento, clients, vehicl
         </div>
         <h1 className="text-3xl font-bold mb-6 print:hidden">Detalhes do Orçamento #{orcamento.numero_orcamento}</h1>
         <h2 className="text-2xl font-semibold mb-4">Informações do Orçamento</h2>
-                <p><strong>Data:</strong> {formattedDate}
+                <p><strong>Data:</strong> {displayFormattedDate}
           {orcamento.updated_at && 
                         <span className="text-sm text-gray-400 ml-2">
-              (Editado em {new Date(orcamento.updated_at).toLocaleDateString('pt-BR')} as {new Date(orcamento.updated_at).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })})
+              {displayUpdatedAt}
             </span>
           }
-        </p>
-        <p><strong>Status:</strong> <span className={`font-bold ${getStatusClass(orcamento.status)}`}>{orcamento.status}</span></p>
+        </p>        <p><strong>Status:</strong> <span className={`font-bold ${getStatusClass(orcamento.status)}`}>{orcamento.status}</span></p>
         <p><strong>KM:</strong> {orcamento.km}</p>
         <p><strong>Cliente:</strong> {getClientName(orcamento.cliente_id)}</p>
         <p><strong>Veículo:</strong> {getVehicleInfo(orcamento.veiculo_id)}</p>
@@ -100,7 +147,7 @@ export default function OrcamentoDetailsPage({ initialOrcamento, clients, vehicl
             'Nenhum serviço selecionado.'
           )}
         </div>
-        <p>
+        <div>
           <strong>Peças:</strong>{' '}
           {orcamento.pecas && orcamento.pecas.length > 0 ? (
             <ul>
@@ -113,8 +160,7 @@ export default function OrcamentoDetailsPage({ initialOrcamento, clients, vehicl
           ) : (
             'Nenhuma peça informada.'
           )}
-        </p>
-        {orcamento.descricao && <p><strong>Descrição:</strong> {orcamento.descricao}</p>}
+        </div>        {orcamento.descricao && <p><strong>Descrição:</strong> {orcamento.descricao}</p>}
         <div className="mt-4 pt-4 border-t border-gray-700">
           <p className="text-xl font-bold">Valor Total do Orçamento: {formatCurrency(calculateTotal())}</p>
         </div>
@@ -126,14 +172,15 @@ export default function OrcamentoDetailsPage({ initialOrcamento, clients, vehicl
             Aprovar Orçamento
           </Button>
         )}
-        <Link href={`/orcamentos/edit/${orcamento.id}`}>
-          <Button className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-1 text-sm">
-            Editar Orçamento
-          </Button>
-        </Link>
+        {orcamento.status !== 'Aprovado' && (
+          <Link href={`/orcamentos/edit/${orcamento.id}`}>
+            <Button className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-1 text-sm">
+              Editar Orçamento
+            </Button>
+          </Link>
+        )}
         <button
-          onClick={() => window.print()}
-          className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded inline-flex items-center print:hidden"
+          onClick={() => window.print()}          className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded inline-flex items-center print:hidden"
         >
           <svg className="fill-current w-4 h-4 mr-2" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20"><path d="M5 4V1h10v3h2v10h-2v4H5v-4H3V4h2zm0 10v3h10v-3H5zm-2-8h14V6H3V6zm0 2v2h14V8H3z"/></svg>
           Imprimir

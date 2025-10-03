@@ -20,8 +20,18 @@ const nextConfig = {
       },
     ];
   },
-  transpilePackages: ['pg', 'pg-hstore', 'pg-native'], // Transpile pg and its related packages
-  webpack: (config, { isServer }) => {
+  transpilePackages: ['pg', 'pg-hstore', 'pg-native', 'src/pages/orcamentos/[id].js'], // Transpile pg and its related packages
+  webpack: (config, { isServer, webpack }) => {
+    // Add a rule to treat .js files in src/pages as ES modules
+    config.module.rules.push({
+      test: /\.js$/,
+      include: require('path').resolve(__dirname, 'src/pages'),
+      type: 'javascript/auto',
+      resolve: {
+        fullySpecified: false,
+      },
+    });
+
     if (!isServer) {
       config.resolve.fallback = {
         fs: false,
